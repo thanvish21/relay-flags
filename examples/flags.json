@@ -1,0 +1,14 @@
+{
+  "segments": [
+    { "key": "beta-users", "clauses": [{ "attribute": "plan", "operator": "in", "values": ["pro", "enterprise"] }] }
+  ],
+  "flags": [
+    {
+      "key": "new-checkout",
+      "default": false,
+      "rules": [{ "id": "internal", "clauses": [{ "attribute": "email", "operator": "equals", "values": ["dev@example.com"] }], "value": true }],
+      "rollout": { "salt": "2026-01", "variations": [{ "value": true, "weight": 25 }, { "value": false, "weight": 75 }] }
+    },
+    { "key": "search-algorithm", "default": "classic", "rules": [{ "id": "beta-segment", "segment": "beta-users", "value": "semantic" }] }
+  ]
+}
