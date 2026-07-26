@@ -51,6 +51,10 @@ export interface Evaluation<T extends FlagValue = FlagValue> {
   reason: EvaluationReason;
 }
 
+export interface CompiledConfig {
+  evaluate(flagKey: string, subject: Subject): Evaluation;
+}
+
 export interface AuditEvent {
   timestamp: string;
   subjectKey: string;

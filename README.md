@@ -72,6 +72,52 @@ The hash makes assignments stable for a fixed key and salt, while changing eithe
 
 Audit output is deliberately outside the evaluator. The HTTP adapter emits a timestamped event after a successful result through an `AuditSink`; `JsonlFileAuditSink` serializes one append-only JSON object per line. File audit writing is appropriate for local use, not a replacement for durable, centralized production event delivery.
 
+## Determinism, And How It Is Proven
+
+"Deterministic" is the central claim, so it is tested rather than asserted. The
+suite verifies that:
+
+- the same `(flagKey, salt, subjectKey)` always lands in the same bucket, across
+  repeated calls and across separate processes;
+- bucket occupancy over a large synthetic population converges on the configured
+  weights, so a 30% rollout actually reaches ~30% of subjects;
+- changing the salt, or the flag key, reshuffles assignments independently —
+  one flag's rollout tells you nothing about another's.
+
+That last property is what makes staged rollouts safe: a subject unlucky in one
+flag is not systematically unlucky in every flag.
+
+## Benchmarks
+
+Measured with `npm run bench` (median of 7 runs, Node v24.18.0, linux x64,
+11th Gen Intel Core i3-1115G4 @ 3.00GHz). Numbers are from a real run on modest
+hardware — reproduce them yourself rather than trusting the table.
+
+| configuration        | `evaluateFlag` /s | compiled /s | speedup |
+| -------------------- | ----------------: | ----------: | ------: |
+| 1 flag × 1 rule      |           206,611 |     179,509 |    0.9× |
+| 10 flags × 3 rules   |            82,268 |     198,571 |    2.4× |
+| 100 flags × 5 rules  |            13,896 |     184,518 |   13.3× |
+| 500 flags × 10 rules |             2,338 |     153,326 |   65.6× |
+
+The shape matters more than the absolute figures. `evaluateFlag` revalidates the
+whole configuration on every call, so its throughput decays as configurations
+grow. Compiling once holds throughput roughly flat — about 5–6 µs per
+evaluation regardless of size — which is why a long-lived service should
+`compileConfig` at startup and keep the immutable result.
+
+Where the time goes, at 100 flags × 5 rules:
+
+| operation                       |     ops/s | latency |
+| ------------------------------- | --------: | ------: |
+| first rule matches, no hash     | 5,653,736 |  177 ns |
+| no rule matches, rollout hash   |   228,440 | 4378 ns |
+| `bucketFor` alone (SHA-256)     |   240,852 | 4152 ns |
+| `compileConfig` (once per load) |    19,991 | 50 µs   |
+
+A matched rule is ~25× cheaper than a rollout, because the rollout pays for
+SHA-256. Determinism is bought with hashing; this is the price.
+
 ## Configuration
 
 See [examples/flags.json](examples/flags.json). Subjects have a required string `key` and optional primitive-valued `attributes`. Clauses use `equals` or `in`; both compare strictly. A boolean flag can only have boolean rule and rollout values, and a string flag can only have string values. Rollout weights must be positive integers totaling 100.
@@ -79,7 +125,8 @@ See [examples/flags.json](examples/flags.json). Subjects have a required string 
 ## Development
 
 ```sh
-npm test          # builds then runs Node's native test runner
+npm test          # builds then runs Node's native test runner (93 tests)
+npm run bench     # evaluation throughput benchmark
 npm run typecheck # TypeScript strict-mode check
 npm run build     # compile to dist/
 ```

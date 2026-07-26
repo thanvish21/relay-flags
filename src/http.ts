@@ -1,24 +1,24 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ConfigurationError, InputError } from "./errors.js";
-import { evaluateFlag, validateConfig } from "./evaluator.js";
+import { compileConfig } from "./evaluator.js";
 import type { AuditSink } from "./audit.js";
-import type { FlagConfig, Subject } from "./types.js";
+import type { CompiledConfig, FlagConfig, Subject } from "./types.js";
 
 export function createHttpServer(config: FlagConfig, auditSink?: AuditSink): Server {
-  validateConfig(config);
+  const compiled = compileConfig(config);
   return createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") return send(response, 200, { status: "ok" });
       if (request.method !== "POST") return send(response, 404, { error: "not_found", message: "route not found" });
       const body = await readJson(request);
       if (request.url === "/v1/evaluate") {
-        const result = await evaluateRequest(config, body, auditSink);
+        const result = await evaluateRequest(compiled, body, auditSink);
         return send(response, 200, result);
       }
       if (request.url === "/v1/evaluate/batch") {
         if (!isRecord(body)) throw new InputError("body must be an object");
         if (!Array.isArray(body.evaluations)) throw new InputError("evaluations must be an array");
-        const results = await Promise.all(body.evaluations.map((item: unknown) => evaluateRequest(config, item, auditSink)));
+        const results = await Promise.all(body.evaluations.map((item: unknown) => evaluateRequest(compiled, item, auditSink)));
         return send(response, 200, { evaluations: results });
       }
       return send(response, 404, { error: "not_found", message: "route not found" });
@@ -29,9 +29,9 @@ export function createHttpServer(config: FlagConfig, auditSink?: AuditSink): Ser
   });
 }
 
-async function evaluateRequest(config: FlagConfig, body: unknown, auditSink?: AuditSink) {
+async function evaluateRequest(compiled: CompiledConfig, body: unknown, auditSink?: AuditSink) {
   if (!isRecord(body) || typeof body.flagKey !== "string" || !isSubject(body.subject)) throw new InputError("body requires flagKey and subject with a key");
-  const evaluation = evaluateFlag(config, body.flagKey, body.subject);
+  const evaluation = compiled.evaluate(body.flagKey, body.subject);
   await auditSink?.append({ timestamp: new Date().toISOString(), subjectKey: body.subject.key, evaluation });
   return evaluation;
 }
