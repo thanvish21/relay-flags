@@ -9,5 +9,6 @@ FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/dist/src ./dist/src
+COPY --from=build /app/examples ./examples
 EXPOSE 3000
 CMD ["node", "dist/src/server.js"]
