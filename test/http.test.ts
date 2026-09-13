@@ -126,6 +126,15 @@ test("bodies larger than one megabyte are refused", async () => withServer(async
   assert.deepEqual(await response.json(), { error: "invalid_request", message: "request body exceeds 1MB" });
 }));
 
+test("oversized bodies do not block subsequent requests", async () => withServer(async (baseUrl) => {
+  const oversized = await post(baseUrl, "/v1/evaluate", JSON.stringify({ flagKey: "enabled", subject: { key: "u1", attributes: { padding: "x".repeat(1_100_000) } } }));
+  assert.equal(oversized.status, 400);
+  assert.deepEqual(await oversized.json(), { error: "invalid_request", message: "request body exceeds 1MB" });
+  const followUp = await post(baseUrl, "/v1/evaluate", { flagKey: "enabled", subject: { key: "u1" } });
+  assert.equal(followUp.status, 200);
+  assert.deepEqual(await followUp.json(), { flagKey: "enabled", value: false, reason: { kind: "DEFAULT" } });
+}));
+
 test("the server works without an audit sink", async () => withCustomServer(createHttpServer(config), async (baseUrl) => {
   const response = await post(baseUrl, "/v1/evaluate", { flagKey: "enabled", subject: { key: "u1" } });
   assert.equal(response.status, 200);

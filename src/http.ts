@@ -50,9 +50,17 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
   let body = "";
+  let bodyBytes = 0;
+  let exceededLimit = false;
   for await (const chunk of request) {
-    body += String(chunk);
-    if (body.length > 1_000_000) throw new InputError("request body exceeds 1MB");
+    const text = String(chunk);
+    bodyBytes += Buffer.byteLength(text);
+    if (bodyBytes > 1_000_000) {
+      exceededLimit = true;
+      continue;
+    }
+    body += text;
   }
+  if (exceededLimit) throw new InputError("request body exceeds 1MB");
   try { return JSON.parse(body); } catch { throw new InputError("request body must be valid JSON"); }
 }
